@@ -3,6 +3,7 @@ import org.transaction.account.domain.DTO.CreateAccountRequest;
 import org.transaction.account.domain.DTO.UpdateAccountRequest;
 import org.transaction.account.domain.DTO.WithdrawAccountRequest;
 import org.transaction.account.domain.port.in.CreateAccountUseCase;
+import org.transaction.account.domain.port.in.GetAccountUseCase;
 import org.transaction.account.domain.port.in.UpdateAccountUseCase;
 import org.transaction.account.domain.port.in.withdrawUseCase;
 import io.smallrye.mutiny.Uni;
@@ -10,7 +11,10 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -28,6 +32,9 @@ public class accountResource {
 
     @Inject 
     UpdateAccountUseCase updateAccountUseCase;
+
+    @Inject 
+    GetAccountUseCase getAccountUseCase;
 
 
     @POST 
@@ -53,6 +60,16 @@ public class accountResource {
     @Path("Update-account")
     public Uni<Response> updatecuenta(UpdateAccountRequest updateAccountRequest){
         return updateAccountUseCase.execute(updateAccountRequest).map(
+            cuenta -> Response.status(Response.Status.OK).entity(cuenta).build()
+        );
+    }
+
+    @GET
+    @Path("Info_cuentas")
+    public Uni<Response> obtenercuentas(
+        @QueryParam("numero_pagina") @DefaultValue ("15") String limit,
+        @QueryParam ("pagina_actual") String page ) {
+        return getAccountUseCase.execute(limit,page).map(
             cuenta -> Response.status(Response.Status.OK).entity(cuenta).build()
         );
     }

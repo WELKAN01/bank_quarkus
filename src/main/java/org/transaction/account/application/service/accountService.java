@@ -1,23 +1,28 @@
 package org.transaction.account.application.service;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import org.transaction.account.domain.DTO.CreateAccountRequest;
+import org.transaction.account.domain.DTO.ListMetadataAccountResponse;
 import org.transaction.account.domain.DTO.UpdateAccountRequest;
 import org.transaction.account.domain.DTO.WithdrawAccountRequest;
 import org.transaction.account.domain.model.account;
 import org.transaction.account.domain.port.in.CreateAccountUseCase;
+import org.transaction.account.domain.port.in.GetAccountUseCase;
 import org.transaction.account.domain.port.in.UpdateAccountUseCase;
 import org.transaction.account.domain.port.in.withdrawUseCase;
 import org.transaction.account.domain.port.out.ExchangeRatePort;
 import org.transaction.account.domain.port.out.accountRepositoryPort;
+
+import com.arjuna.ats.internal.jdbc.drivers.modifiers.list;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 @ApplicationScoped 
-public class accountService implements  withdrawUseCase,CreateAccountUseCase,UpdateAccountUseCase{
+public class accountService implements  withdrawUseCase,CreateAccountUseCase,UpdateAccountUseCase,GetAccountUseCase{
 
     
     private final accountRepositoryPort repositoryPort;
@@ -83,6 +88,11 @@ public class accountService implements  withdrawUseCase,CreateAccountUseCase,Upd
         return repositoryPort.actualizarCuenta(request)
             .onItem().transform(optional -> optional.orElseThrow(
                 () -> new IllegalArgumentException("Cuenta no se encontro")));
+    }
+
+    @Override
+    public Uni<ListMetadataAccountResponse> execute(String num_pagina,String pagina_actual) {
+        return repositoryPort.ListAccountBank(num_pagina, pagina_actual);
     }
 
 

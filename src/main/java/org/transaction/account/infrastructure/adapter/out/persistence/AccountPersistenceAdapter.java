@@ -1,9 +1,12 @@
 package org.transaction.account.infrastructure.adapter.out.persistence;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.transaction.account.domain.DTO.AccountPatch;
+import org.transaction.account.domain.DTO.ListMetadataAccountResponse;
 import org.transaction.account.domain.DTO.UpdateAccountRequest;
 import org.transaction.account.domain.DTO.WithdrawAccountRequest;
 import org.transaction.account.domain.model.account;
@@ -11,16 +14,17 @@ import org.transaction.account.domain.port.out.accountRepositoryPort;
 import org.transaction.account.infrastructure.adapter.out.entity.AccountEntity;
 
 import io.smallrye.mutiny.Uni;
+import io.quarkus.hibernate.reactive.panache.Panache;
+import io.quarkus.panache.common.Page;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.LockModeType;
 import jakarta.inject.Inject;
-import org.hibernate.reactive.mutiny.Mutiny;
 
 @ApplicationScoped 
 public class AccountPersistenceAdapter implements accountRepositoryPort {
 
     @Inject
-    Mutiny.SessionFactory sessionFactory;
+    AccountPanacheRepository accountRepository;
 
     @Override
     public Uni<Optional<account>> buscarCuentaParaRetiro(WithdrawAccountRequest request) {
@@ -38,8 +42,8 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
                 new IllegalArgumentException("Los cambios de la cuenta son obligatorios"));
         }
 
-        return sessionFactory.withTransaction(session ->
-            buscarCuenta(session, request.numero_cuenta(), request.cuenta_interbancaria(), true)
+        return Panache.withTransaction(() ->
+            buscarCuenta(request.numero_cuenta(), request.cuenta_interbancaria(), true)
                 .onItem().transform(entity -> {
                     if (entity == null) {
                         return Optional.empty();
@@ -56,7 +60,7 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
 
     @Override
     public Uni<account> save(account account) {
-        return sessionFactory.withTransaction(session -> {
+        return Panache.withTransaction(() -> {
             AccountEntity entity = new AccountEntity();
             entity.setNombre_dueino(account.getNombre_dueino());
             entity.setNumero_cuenta(account.getNumero_cuenta());
@@ -64,12 +68,7 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
             entity.setBalance(account.getBalance());
             entity.setMoneda(account.getMoneda());
 
-            if (entity.getId() == null) {
-                return session.persist(entity)
-                        .replaceWith(entity)
-                        .map(this::toDomain);
-            }
-            return session.merge(entity).map(this::toDomain);
+            return accountRepository.persist(entity).map(this::toDomain);
         });
     }
 
@@ -81,8 +80,8 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
             return Uni.createFrom().failure(
                 new IllegalArgumentException("La solicitud y el monto son obligatorios"));
         }
-        return sessionFactory.withTransaction(session ->
-            buscarCuenta(session, request.numero_cuenta(), request.cuenta_interbancaria(), true)
+        return Panache.withTransaction(() ->
+            buscarCuenta(request.numero_cuenta(), request.cuenta_interbancaria(), true)
                 .onItem().transform(entity -> {
                     if (entity == null) {
                         return Optional.empty();
@@ -97,11 +96,10 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
     }
 
     private Uni<AccountEntity> buscarCuenta(
-            Mutiny.Session session,
             String numeroCuenta,
             String cuentaInterbancaria,
             boolean bloquear) {
-        String consulta;
+        String campo;
         String numero;
         boolean tieneNumeroCuenta = numeroCuenta != null
                 && !numeroCuenta.isBlank();
@@ -114,34 +112,26 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
         }
 
         if (tieneNumeroCuenta) {
-            consulta = """
-                SELECT a FROM AccountEntity a
-                WHERE a.numero_cuenta = :numero
-                """;
+            campo = "numero_cuenta";
             numero = numeroCuenta;
         } else {
-            consulta = """
-                SELECT a FROM AccountEntity a
-                WHERE a.numero_interbancario = :numero
-                """;
+            campo = "numero_interbancario";
             numero = cuentaInterbancaria;
         }
 
-        var query = session.createSelectionQuery(consulta, AccountEntity.class)
-            .setParameter("numero", numero)
-            ;
-
         if (bloquear) {
-            query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
+            return accountRepository.find(campo, numero)
+                .withLock(LockModeType.PESSIMISTIC_WRITE)
+                .firstResult();
         }
-        return query.getSingleResultOrNull();
+        return accountRepository.find(campo, numero).firstResult();
     }
 
     private Uni<Optional<account>> buscarCuenta(
             String numeroCuenta,
             String cuentaInterbancaria) {
-        return sessionFactory.withSession(session ->
-            buscarCuenta(session, numeroCuenta, cuentaInterbancaria, false)
+        return Panache.withSession(() ->
+            buscarCuenta(numeroCuenta, cuentaInterbancaria, false)
         ).map(entity -> Optional.ofNullable(entity).map(this::toDomain));
     }
 
@@ -162,6 +152,24 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
         if (cambios.moneda() != null) {
             cuenta.cambiarMoneda(cambios.moneda());
         }
+    }
+
+    @Override
+    public Uni<ListMetadataAccountResponse> ListAccountBank(String num_pagina, String pagina) {
+        int index= Integer.valueOf(num_pagina);
+        int tamanio_pagina =  Integer.valueOf(pagina);
+        return Panache.withTransaction(()->{
+            return accountRepository.findAll().
+                page(Page.of(index, tamanio_pagina)).
+                withLock(LockModeType.PESSIMISTIC_READ).
+                list().onItem().transform(listaccount ->
+                    new ListMetadataAccountResponse(
+                            index,
+                            tamanio_pagina,
+                            listaccount.size()
+                            ,listaccount.stream().map(this::toDomain).toList())
+            );
+        });
     }
 
 }
