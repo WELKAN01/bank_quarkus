@@ -8,6 +8,7 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.transaction.account.domain.DTO.AccountPatch;
+import org.transaction.account.domain.DTO.DepositoAccountRequest;
 import org.transaction.account.domain.DTO.ListMetadataAccountResponse;
 import org.transaction.account.domain.DTO.UpdateAccountRequest;
 import org.transaction.account.domain.DTO.WithdrawAccountRequest;
@@ -148,6 +149,17 @@ class accountServiceTest {
         @Override
         public Uni<account> save(account cuenta) {
             return Uni.createFrom().item(cuenta);
+        }
+
+        @Override
+        public Uni<List<account>> saveAll(List<account> cuentas) {
+            return Uni.createFrom().item(cuentas);
+        }
+
+        @Override
+        public Uni<Optional<account>> buscarCuentaParaDeposito(DepositoAccountRequest request) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'buscarCuentaParaDeposito'");
         }
     }
 }
