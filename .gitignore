@@ -53,3 +53,6 @@ maven-wrapper.properties
 /.quarkus/cli/plugins/
 # TLS Certificates
 .certs/
+
+# Configuración local con credenciales y datos específicos del entorno.
+/src/main/resources/application.properties

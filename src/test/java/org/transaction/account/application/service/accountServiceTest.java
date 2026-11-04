@@ -161,5 +161,12 @@ class accountServiceTest {
             // TODO Auto-generated method stub
             throw new UnsupportedOperationException("Unimplemented method 'buscarCuentaParaDeposito'");
         }
+
+        @Override
+        public Uni<Optional<account>> depositarMontocuenta(DepositoAccountRequest request,
+                BigDecimal montoEnMonedaDeCuenta) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'depositarMontocuenta'");
+        }
     }
 }
