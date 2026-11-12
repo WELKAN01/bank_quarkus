@@ -131,3 +131,16 @@ Las operaciones administrativas requieren un token Bearer válido cuyo claim `co
 ## Servicio externo
 
 La aplicación consulta tipos de cambio mediante la API de Frankfurter. La URL base se configura con `quarkus.rest-client.exchange-api.url`.
+
+## CI/CD con GitHub Actions y AWS
+
+El repositorio incluye una canalización lista para desplegar el contenedor en Amazon ECS Fargate:
+
+- **CI** (`.github/workflows/ci.yml`): se ejecuta en cada pull request y cambio a `main`; ejecuta `mvn verify`, conserva los reportes de pruebas y valida que la imagen Docker pueda construirse.
+- **CD** (`.github/workflows/deploy-aws.yml`): en `main` (o manualmente) vuelve a verificar el código, publica una imagen inmutable etiquetada con el SHA en ECR y actualiza el servicio ECS. El environment `production` permite exigir aprobación desde GitHub antes del despliegue.
+
+Antes del primer despliegue, crea el repositorio ECR, un clúster/servicio ECS Fargate, el grupo de logs `/ecs/banking-api` y completa los marcadores `REPLACE_WITH_...` de `infrastructure/ecs/task-definition.json`. El balanceador debe comprobar `GET /q/health/live` en el puerto 8080.
+
+Configura estas **variables de repositorio** en GitHub: `AWS_REGION`, `ECR_REPOSITORY`, `ECS_CLUSTER` y `ECS_SERVICE`. Configura el secreto `AWS_DEPLOY_ROLE_ARN` con el ARN del rol que GitHub asumirá. No guardes contraseñas ni URLs de base de datos en GitHub: el task definition las obtiene desde AWS Secrets Manager como `DB_USER`, `DB_PASSWORD`, `DB_REACTIVE_URL`, `DB_JDBC_URL`, `OIDC_AUTH_SERVER_URL` y `OIDC_CLIENT_ID`.
+
+El proveedor OIDC de GitHub debe ser `https://token.actions.githubusercontent.com` con audiencia `sts.amazonaws.com`. Restringe la política de confianza del rol al repositorio y a `refs/heads/main` (y, si se usará, al environment `production`). Ese rol necesita únicamente permisos para publicar en el repositorio ECR indicado y registrar/actualizar la definición y servicio ECS. El **execution role** de ECS, por su parte, necesita leer los secretos y escribir logs; el **task role** debe quedar con permisos de aplicación mínimos.

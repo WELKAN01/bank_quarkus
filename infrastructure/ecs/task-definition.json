@@ -1,0 +1,46 @@
+{
+  "family": "banking-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "REPLACE_WITH_ECS_TASK_EXECUTION_ROLE_ARN",
+  "taskRoleArn": "REPLACE_WITH_APPLICATION_TASK_ROLE_ARN",
+  "containerDefinitions": [
+    {
+      "name": "banking-api",
+      "image": "REPLACED_BY_GITHUB_ACTIONS",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8080, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "QUARKUS_PROFILE", "value": "remote" },
+        { "name": "QUARKUS_HTTP_HOST", "value": "0.0.0.0" }
+      ],
+      "secrets": [
+        { "name": "DB_USER", "valueFrom": "REPLACE_WITH_DB_USER_SECRET_ARN" },
+        { "name": "DB_PASSWORD", "valueFrom": "REPLACE_WITH_DB_PASSWORD_SECRET_ARN" },
+        { "name": "DB_REACTIVE_URL", "valueFrom": "REPLACE_WITH_DB_REACTIVE_URL_SECRET_ARN" },
+        { "name": "DB_JDBC_URL", "valueFrom": "REPLACE_WITH_DB_JDBC_URL_SECRET_ARN" },
+        { "name": "OIDC_AUTH_SERVER_URL", "valueFrom": "REPLACE_WITH_OIDC_AUTH_SERVER_URL_SECRET_ARN" },
+        { "name": "OIDC_CLIENT_ID", "valueFrom": "REPLACE_WITH_OIDC_CLIENT_ID_SECRET_ARN" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/q/health/live || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/banking-api",
+          "awslogs-region": "REPLACE_WITH_AWS_REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
