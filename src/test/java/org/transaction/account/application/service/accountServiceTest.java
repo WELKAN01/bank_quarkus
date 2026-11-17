@@ -8,10 +8,13 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.transaction.account.domain.DTO.AccountPatch;
+import org.transaction.account.domain.DTO.CreateAccountRequest;
 import org.transaction.account.domain.DTO.DepositoAccountRequest;
 import org.transaction.account.domain.DTO.ListMetadataAccountResponse;
+import org.transaction.account.domain.DTO.TransferAccountRequest;
 import org.transaction.account.domain.DTO.UpdateAccountRequest;
 import org.transaction.account.domain.DTO.WithdrawAccountRequest;
+import org.transaction.account.domain.model.TransactionHistory;
 import org.transaction.account.domain.model.account;
 import org.transaction.account.domain.port.out.ExchangeRatePort;
 import org.transaction.account.domain.port.out.accountRepositoryPort;
@@ -64,6 +67,25 @@ class accountServiceTest {
     }
 
     @Test
+    void transfiereMontoEntreCuentasYGuardaElHistorial() {
+        account origen = cuentaConSaldo("200.00", "PEN");
+        account destino = cuentaConSaldo("50.00", "PEN");
+        RepositorioFalso repositorio = new RepositorioFalso(origen, destino);
+        accountService servicio = new accountService(repositorio, new TipoCambioFalso(BigDecimal.ONE));
+        TransferAccountRequest solicitud = new TransferAccountRequest("001", null, "002", null, new BigDecimal("25.00"), "PEN", "Transferencia entre cuentas");
+
+        TransactionHistory resultado = servicio.transferir(solicitud).await().indefinitely();
+
+        assertEquals(new BigDecimal("175.00"), origen.getBalance());
+        assertEquals(new BigDecimal("75.00"), destino.getBalance());
+        assertEquals("001", resultado.origen());
+        assertEquals("002", resultado.destino());
+        assertEquals(new BigDecimal("25.00"), resultado.monto());
+        assertEquals("PEN", resultado.moneda());
+        assertEquals("TRANSFERENCIA", resultado.tipo());
+    }
+
+    @Test
     void actualizaCuentaYDevuelveLaCuentaActualizada() {
         account cuenta = cuentaConSaldo("100.00", "PEN");
         RepositorioFalso repositorio = new RepositorioFalso(cuenta);
@@ -77,8 +99,32 @@ class accountServiceTest {
         assertEquals("USD", resultado.getMoneda());
     }
 
+    @Test
+    void creaCuentaIdempotenteCuandoSeRepiteLaMismaClave() {
+        RepositorioFalso repositorio = new RepositorioFalso(null);
+        accountService servicio = new accountService(repositorio, new TipoCambioFalso(BigDecimal.ONE));
+        CreateAccountRequest solicitud = new CreateAccountRequest(
+            new BigDecimal("100.00"),
+            "PEN",
+            "Ana Torres",
+            "001",
+            "CCI-001"
+        );
+
+        account primera = servicio.execute(solicitud, "idem-123").await().indefinitely();
+        account repetida = servicio.execute(solicitud, "idem-123").await().indefinitely();
+
+        assertEquals("001", primera.getNumero_cuenta());
+        assertEquals("001", repetida.getNumero_cuenta());
+        assertEquals(1, repositorio.cuentasGuardadas);
+    }
+
     private static account cuentaConSaldo(String saldo, String moneda) {
         return new account(new BigDecimal(saldo), "Cliente inicial", "001", "CCI-001", moneda);
+    }
+
+    private static account cuentaConSaldo(String saldo, String moneda, String numeroCuenta) {
+        return new account(new BigDecimal(saldo), "Cliente inicial", numeroCuenta, "CCI-" + numeroCuenta, moneda);
     }
 
     private static final class TipoCambioFalso implements ExchangeRatePort {
@@ -99,16 +145,26 @@ class accountServiceTest {
     }
 
     private static final class RepositorioFalso implements accountRepositoryPort {
-        private final account cuenta;
+        private account cuenta;
+        private final account cuentaDestino;
         private int busquedasParaRetiro;
         private WithdrawAccountRequest solicitudBuscada;
         private BigDecimal montoExtraido;
         private String numeroPaginaRecibido;
         private String tamanioPaginaRecibido;
         private UpdateAccountRequest solicitudActualizada;
+        private TransactionHistory historialGuardado;
+        private int cuentasGuardadas;
+        private String ultimoIdempotencyKey;
+        private String ultimoPayloadHash;
 
         private RepositorioFalso(account cuenta) {
+            this(cuenta, null);
+        }
+
+        private RepositorioFalso(account cuenta, account cuentaDestino) {
             this.cuenta = cuenta;
+            this.cuentaDestino = cuentaDestino;
         }
 
         @Override
@@ -148,6 +204,17 @@ class accountServiceTest {
 
         @Override
         public Uni<account> save(account cuenta) {
+            return save(cuenta, null, null);
+        }
+
+        @Override
+        public Uni<account> save(account cuenta, String idempotencyKey, String payloadHash) {
+            cuentasGuardadas++;
+            ultimoIdempotencyKey = idempotencyKey;
+            ultimoPayloadHash = payloadHash;
+            if (this.cuenta == null) {
+                this.cuenta = cuenta;
+            }
             return Uni.createFrom().item(cuenta);
         }
 
@@ -157,9 +224,36 @@ class accountServiceTest {
         }
 
         @Override
+        public Uni<Optional<String>> buscarHashPorIdempotencyKey(String idempotencyKey) {
+            if ("idem-123".equals(idempotencyKey) && ultimoPayloadHash != null) {
+                return Uni.createFrom().item(Optional.of(ultimoPayloadHash));
+            }
+            return Uni.createFrom().item(Optional.empty());
+        }
+
+        @Override
+        public Uni<Optional<account>> buscarCuentaPorIdempotencyKey(String idempotencyKey) {
+            if ("idem-123".equals(idempotencyKey) && this.cuenta != null) {
+                return Uni.createFrom().item(Optional.of(this.cuenta));
+            }
+            return Uni.createFrom().item(Optional.empty());
+        }
+
+        @Override
+        public Uni<Optional<account>> buscarCuentaPorNumeroCuentaOInterbancario(String numeroCuenta, String numeroInterbancario) {
+            if (this.cuenta == null) {
+                return Uni.createFrom().item(Optional.empty());
+            }
+            if (numeroCuenta.equals(this.cuenta.getNumero_cuenta())
+                || numeroInterbancario.equals(this.cuenta.getNumero_interbancario())) {
+                return Uni.createFrom().item(Optional.of(this.cuenta));
+            }
+            return Uni.createFrom().item(Optional.empty());
+        }
+
+        @Override
         public Uni<Optional<account>> buscarCuentaParaDeposito(DepositoAccountRequest request) {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'buscarCuentaParaDeposito'");
+            return Uni.createFrom().item(Optional.ofNullable(cuentaDestino != null ? cuentaDestino : cuenta));
         }
 
         @Override
@@ -167,6 +261,24 @@ class accountServiceTest {
                 BigDecimal montoEnMonedaDeCuenta) {
             // TODO Auto-generated method stub
             throw new UnsupportedOperationException("Unimplemented method 'depositarMontocuenta'");
+        }
+
+        @Override
+        public Uni<TransactionHistory> transferirEntreCuentas(TransferAccountRequest request, BigDecimal montoOrigen, BigDecimal montoDestino) {
+            if (cuentaDestino == null) {
+                throw new UnsupportedOperationException("Cuenta destino no configurada");
+            }
+            cuenta.retiro(montoOrigen);
+            cuentaDestino.depositar(montoDestino);
+            historialGuardado = new TransactionHistory(
+                "001",
+                "002",
+                montoOrigen,
+                request.moneda(),
+                "TRANSFERENCIA",
+                request.descripcion()
+            );
+            return Uni.createFrom().item(historialGuardado);
         }
     }
 }
