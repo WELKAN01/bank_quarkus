@@ -8,5 +8,6 @@ import io.smallrye.mutiny.Uni;
 
 public interface CreateAccountUseCase {
         Uni<account> execute(CreateAccountRequest createAccountRequest);
+        Uni<account> execute(CreateAccountRequest createAccountRequest, String idempotencyKey);
 
 }

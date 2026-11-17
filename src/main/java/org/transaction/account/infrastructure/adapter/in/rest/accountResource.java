@@ -5,12 +5,14 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.transaction.account.domain.DTO.CreateAccountRequest;
 import org.transaction.account.domain.DTO.CreateAccountsRequest;
 import org.transaction.account.domain.DTO.DepositoAccountRequest;
+import org.transaction.account.domain.DTO.TransferAccountRequest;
 import org.transaction.account.domain.DTO.UpdateAccountRequest;
 import org.transaction.account.domain.DTO.WithdrawAccountRequest;
 import org.transaction.account.domain.port.in.CreateAccountUseCase;
 import org.transaction.account.domain.port.in.CreateAccountsUseCase;
 import org.transaction.account.domain.port.in.DepositoUseCase;
 import org.transaction.account.domain.port.in.GetAccountUseCase;
+import org.transaction.account.domain.port.in.TransferUseCase;
 import org.transaction.account.domain.port.in.UpdateAccountUseCase;
 import org.transaction.account.domain.port.in.withdrawUseCase;
 import io.smallrye.mutiny.Uni;
@@ -23,6 +25,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -53,6 +56,9 @@ public class accountResource {
     @Inject 
     DepositoUseCase depositoAccountUseCase;
 
+    @Inject
+    TransferUseCase transferUseCase;
+
     @POST 
     @Path("/extraccion")
     public Uni<Response> extraccioncuenta(WithdrawAccountRequest withdrawAccountRequest) {
@@ -65,10 +71,11 @@ public class accountResource {
 
     @POST 
     @Path("/create-account")
-    public Uni<Response> crearcuenta(CreateAccountRequest createAccountRequest){
-        return createAccountUseCase.execute(createAccountRequest).map(
+    public Uni<Response> crearcuenta(
+            CreateAccountRequest createAccountRequest,
+            @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return createAccountUseCase.execute(createAccountRequest, idempotencyKey).map(
             cuenta -> Response.status(Response.Status.OK).entity(cuenta).build()
-
         );
     }
 
@@ -130,6 +137,14 @@ public class accountResource {
     public Uni<Response> depositarcuenta(DepositoAccountRequest depositAccountRequest) {
         return depositoAccountUseCase.execute(depositAccountRequest).map(
             cuenta -> Response.status(Response.Status.OK).entity(cuenta).build()
+        );
+    }
+
+    @POST
+    @Path("/transferencia")
+    public Uni<Response> transferirEntreCuentas(TransferAccountRequest request) {
+        return transferUseCase.execute(request).map(
+            historico -> Response.status(Response.Status.OK).entity(historico).build()
         );
     }
 }

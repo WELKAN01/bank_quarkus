@@ -5,8 +5,10 @@ import java.util.Optional;
 
 import org.transaction.account.domain.DTO.DepositoAccountRequest;
 import org.transaction.account.domain.DTO.ListMetadataAccountResponse;
+import org.transaction.account.domain.DTO.TransferAccountRequest;
 import org.transaction.account.domain.DTO.UpdateAccountRequest;
 import org.transaction.account.domain.DTO.WithdrawAccountRequest;
+import org.transaction.account.domain.model.TransactionHistory;
 import org.transaction.account.domain.model.account;
 
 import io.smallrye.mutiny.Uni;
@@ -14,6 +16,10 @@ import io.smallrye.mutiny.Uni;
 public interface accountRepositoryPort {
     Uni<Optional<account>> buscarCuentaParaRetiro(WithdrawAccountRequest request);
     Uni<account> save(account account);
+    Uni<account> save(account account, String idempotencyKey, String payloadHash);
+    Uni<Optional<String>> buscarHashPorIdempotencyKey(String idempotencyKey);
+    Uni<Optional<account>> buscarCuentaPorIdempotencyKey(String idempotencyKey);
+    Uni<Optional<account>> buscarCuentaPorNumeroCuentaOInterbancario(String numeroCuenta, String numeroInterbancario);
     Uni<List<account>> saveAll(List<account> accounts);
     Uni<Optional<account>> extraermontocuenta(
         WithdrawAccountRequest request,
@@ -25,4 +31,8 @@ public interface accountRepositoryPort {
     Uni<Optional<account>> depositarMontocuenta(
         DepositoAccountRequest request,
         BigDecimal montoEnMonedaDeCuenta);
+    Uni<TransactionHistory> transferirEntreCuentas(
+        TransferAccountRequest request,
+        BigDecimal montoOrigen,
+        BigDecimal montoDestino);
 }

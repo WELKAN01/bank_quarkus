@@ -1,6 +1,7 @@
 package org.transaction.account.domain.model;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 import org.transaction.account.domain.exception.InsufficientFundsException;
 import org.transaction.account.domain.exception.InvalidAccountDataException;
@@ -35,7 +36,7 @@ public class account {
 
 
     public BigDecimal getBalance() {
-        return balance;
+        return balance.setScale(2, RoundingMode.HALF_UP);
     }
 
     public String getMoneda() {

@@ -8,12 +8,16 @@ import java.util.stream.Collectors;
 import org.transaction.account.domain.DTO.AccountPatch;
 import org.transaction.account.domain.DTO.DepositoAccountRequest;
 import org.transaction.account.domain.DTO.ListMetadataAccountResponse;
+import org.transaction.account.domain.DTO.TransferAccountRequest;
 import org.transaction.account.domain.DTO.UpdateAccountRequest;
 import org.transaction.account.domain.DTO.WithdrawAccountRequest;
+import org.transaction.account.domain.exception.AccountNotFoundException;
 import org.transaction.account.domain.exception.InvalidAccountDataException;
+import org.transaction.account.domain.model.TransactionHistory;
 import org.transaction.account.domain.model.account;
 import org.transaction.account.domain.port.out.accountRepositoryPort;
 import org.transaction.account.infrastructure.adapter.out.entity.AccountEntity;
+import org.transaction.account.infrastructure.adapter.out.entity.TransactionHistoryEntity;
 
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.Multi;
@@ -21,6 +25,7 @@ import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.panache.common.Page;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.LockModeType;
+import jakarta.transaction.Transactional;
 import jakarta.inject.Inject;
 
 @ApplicationScoped 
@@ -28,7 +33,11 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
     
     @Inject
     AccountPanacheRepository accountRepository;
+
+    @Inject
+    TransactionHistoryPanacheRepository transactionHistoryRepository;
     
+    @Transactional 
     @Override
     public Uni<Optional<account>> buscarCuentaParaDeposito(DepositoAccountRequest request) {
         if (request == null) {
@@ -38,6 +47,7 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
         return buscarCuenta(request.numero_cuenta(), request.cuenta_interbancaria());
     }
     
+    @Transactional 
     @Override
     public Uni<Optional<account>> buscarCuentaParaRetiro(WithdrawAccountRequest request) {
         if (request == null) {
@@ -47,6 +57,8 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
         return buscarCuenta(request.numero_cuenta(), request.cuenta_interbancaria());
     }
 
+
+    @Transactional 
     @Override
     public Uni<Optional<account>> actualizarCuenta(UpdateAccountRequest request) {
         if (request == null || request.cambios() == null) {
@@ -70,8 +82,16 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
         );
     }
 
+
+    @Transactional 
     @Override
     public Uni<account> save(account account) {
+        return save(account, null, null);
+    }
+
+    @Transactional 
+    @Override
+    public Uni<account> save(account account, String idempotencyKey, String payloadHash) {
         return Panache.withTransaction(() -> {
             AccountEntity entity = new AccountEntity();
             entity.setNombre_dueino(account.getNombre_dueino());
@@ -79,11 +99,49 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
             entity.setNumero_interbancario(account.getNumero_interbancario());
             entity.setBalance(account.getBalance());
             entity.setMoneda(account.getMoneda());
+            entity.setIdempotencyKey(idempotencyKey);
+            entity.setPayloadHash(payloadHash);
 
             return accountRepository.persist(entity).map(this::toDomain);
         });
     }
 
+    @Override
+    public Uni<Optional<String>> buscarHashPorIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return Uni.createFrom().item(Optional.empty());
+        }
+        return Panache.withSession(() ->
+            accountRepository.find("idempotencyKey", idempotencyKey).firstResult())
+            .map(entity -> Optional.ofNullable(entity).map(AccountEntity::getPayloadHash));
+    }
+
+    @Override
+    public Uni<Optional<account>> buscarCuentaPorIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return Uni.createFrom().item(Optional.empty());
+        }
+        return Panache.withSession(() ->
+            accountRepository.find("idempotencyKey", idempotencyKey).firstResult())
+            .map(entity -> Optional.ofNullable(entity).map(this::toDomain));
+    }
+
+    @Override
+    public Uni<Optional<account>> buscarCuentaPorNumeroCuentaOInterbancario(String numeroCuenta, String numeroInterbancario) {
+        if (numeroCuenta != null && !numeroCuenta.isBlank()) {
+            return Panache.withSession(() ->
+                accountRepository.find("numero_cuenta", numeroCuenta).firstResult())
+                .map(entity -> Optional.ofNullable(entity).map(this::toDomain));
+        }
+        if (numeroInterbancario != null && !numeroInterbancario.isBlank()) {
+            return Panache.withSession(() ->
+                accountRepository.find("numero_interbancario", numeroInterbancario).firstResult())
+                .map(entity -> Optional.ofNullable(entity).map(this::toDomain));
+        }
+        return Uni.createFrom().item(Optional.empty());
+    }
+
+    @Transactional 
     @Override
     public Uni<List<account>> saveAll(List<account> accounts) {
         return Panache.withTransaction(() ->
@@ -95,6 +153,8 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
         );
     }
 
+
+    @Transactional 
     @Override
     public Uni<Optional<account>> extraermontocuenta(
             WithdrawAccountRequest request,
@@ -187,22 +247,24 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
         }
     }
 
+
+    @Transactional 
     @Override
     public Uni<ListMetadataAccountResponse> ListAccountBank(String num_pagina, String pagina) {
-        int index= Integer.valueOf(num_pagina);
-        int tamanio_pagina =  Integer.valueOf(pagina);
-        return Panache.withTransaction(()->{
-            return accountRepository.findAll().
-                page(Page.of(index, tamanio_pagina)).
-                withLock(LockModeType.PESSIMISTIC_READ).
-                list().onItem().transform(listaccount ->
-                    new ListMetadataAccountResponse(
-                            index,
-                            tamanio_pagina,
-                            listaccount.size()
-                            ,listaccount.stream().map(this::toDomain).toList())
-            );
-        });
+        int index = Integer.parseInt(num_pagina);
+        int tamanio_pagina = Integer.parseInt(pagina);
+
+        return accountRepository.findAll()
+            .page(Page.of(index, tamanio_pagina))
+            .list()
+            .onItem().transform(cuentas ->
+                new ListMetadataAccountResponse(
+                    index,
+                    tamanio_pagina,
+                    cuentas.size(),
+                    cuentas.stream().map(this::toDomain).toList()
+                )
+        );
     }
 
 
@@ -224,6 +286,67 @@ public class AccountPersistenceAdapter implements accountRepositoryPort {
                 entity.setBalance(cuenta.getBalance());
                 return Optional.of(cuenta);
             })
+        );
+    }
+
+
+    @Transactional 
+    @Override
+    public Uni<TransactionHistory> transferirEntreCuentas(
+            TransferAccountRequest request,
+            BigDecimal montoOrigen,
+            BigDecimal montoDestino) {
+        if (request == null || montoOrigen == null || montoDestino == null) {
+            return Uni.createFrom().failure(
+                new InvalidAccountDataException("La transferencia y los montos son obligatorios"));
+        }
+
+        return Panache.withTransaction(() ->
+            buscarCuenta(request.numero_cuenta_origen(), request.cuenta_interbancaria_origen(), true)
+                .flatMap(origenEntity -> {
+                    if (origenEntity == null) {
+                        return Uni.createFrom().failure(new AccountNotFoundException());
+                    }
+                    return buscarCuenta(request.numero_cuenta_destino(), request.cuenta_interbancaria_destino(), true)
+                        .flatMap(destinoEntity -> {
+                            if (destinoEntity == null) {
+                                return Uni.createFrom().failure(new AccountNotFoundException());
+                            }
+
+                            account origen = toDomain(origenEntity);
+                            account destino = toDomain(destinoEntity);
+
+                            origen.retiro(montoOrigen);
+                            destino.depositar(montoDestino);
+
+                            origenEntity.setBalance(origen.getBalance());
+                            destinoEntity.setBalance(destino.getBalance());
+
+                            TransactionHistoryEntity historial = new TransactionHistoryEntity();
+                            historial.setOrigen(origen.getNumero_cuenta());
+                            historial.setDestino(destino.getNumero_cuenta());
+                            historial.setMonto(montoOrigen);
+                            historial.setMoneda(request.moneda() == null ? origen.getMoneda() : request.moneda());
+                            historial.setTipo("TRANSFERENCIA");
+                            historial.setDescripcion(request.descripcion() == null ? "Transferencia" : request.descripcion());
+                            historial.setFecha(java.time.LocalDateTime.now());
+
+                            return transactionHistoryRepository.persist(historial)
+                                .map(this::toTransactionHistory);
+                        });
+                })
+        );
+    }
+
+    private TransactionHistory toTransactionHistory(TransactionHistoryEntity entity) {
+        return new TransactionHistory(
+            entity.getOrigen(),
+            entity.getDestino(),
+            entity.getMonto(),
+            entity.getMoneda(),
+            entity.getTipo(),
+            entity.getDescripcion(),
+            entity.getFecha()
         );
     }
 
