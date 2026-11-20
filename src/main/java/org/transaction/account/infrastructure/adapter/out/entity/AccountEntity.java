@@ -21,10 +21,6 @@ public class AccountEntity {
     private String moneda;
     @Column(unique = true, nullable = false)
     private String numero_interbancario;
-    @Column(name = "idempotency_key", unique = true)
-    private String idempotencyKey;
-    @Column(name = "payload_hash")
-    private String payloadHash;
     public Long getId() {
         return id;
     }
@@ -60,18 +56,6 @@ public class AccountEntity {
     }
     public void setMoneda(String moneda) {
         this.moneda = moneda;
-    }
-    public String getIdempotencyKey() {
-        return idempotencyKey;
-    }
-    public void setIdempotencyKey(String idempotencyKey) {
-        this.idempotencyKey = idempotencyKey;
-    }
-    public String getPayloadHash() {
-        return payloadHash;
-    }
-    public void setPayloadHash(String payloadHash) {
-        this.payloadHash = payloadHash;
     }
 
 

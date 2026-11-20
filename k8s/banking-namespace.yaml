@@ -1,0 +1,156 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: banking
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: banking
+  namespace: banking
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: view-jobs
+  namespace: banking
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: banking-view-jobs
+  namespace: banking
+subjects:
+  - kind: ServiceAccount
+    name: banking
+    namespace: banking
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: view-jobs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: banking
+  namespace: banking
+spec:
+  type: ClusterIP
+  selector:
+    app: banking
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: banking
+  namespace: banking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: banking
+  template:
+    metadata:
+      labels:
+        app: banking
+    spec:
+      serviceAccountName: banking
+      containers:
+        - name: banking
+          image: banking:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: QUARKUS_FLYWAY_ACTIVE
+              value: "false"
+            - name: DB_REACTIVE_URL
+              value: postgresql://postgres:5432/banking_db
+            - name: DB_JDBC_URL
+              value: jdbc:postgresql://postgres:5432/banking_db
+            - name: DB_USER
+              value: postgres
+            - name: DB_PASSWORD
+              value: "123456"
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /q/health/started
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 10
+      initContainers:
+        - name: wait-for-flyway
+          image: groundnuty/k8s-wait-for:no-root-v1.7
+          imagePullPolicy: IfNotPresent
+          args:
+            - job
+            - banking-flyway-init
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: banking-flyway-init
+  namespace: banking
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: banking
+      containers:
+        - name: banking-flyway-init
+          image: banking:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: QUARKUS_INIT_AND_EXIT
+              value: "true"
+            - name: QUARKUS_FLYWAY_ACTIVE
+              value: "true"
+            - name: DB_JDBC_URL
+              value: jdbc:postgresql://postgres:5432/banking_db
+            - name: DB_USER
+              value: postgres
+            - name: DB_PASSWORD
+              value: "123456"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: banking-ingress
+  namespace: banking
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: banking.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: banking
+                port:
+                  number: 80

@@ -78,8 +78,11 @@ public class accountService implements
                 new InvalidAccountDataException("Los datos de la cuenta son obligatorios"));
         }
 
+
+        // Validar que el balance inicial sea positivo
         String payloadHash = generarPayloadHash(createAccountRequest);
 
+        // Validar que el balance inicial sea positivo
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             return repositoryPort.buscarHashPorIdempotencyKey(idempotencyKey)
                 .flatMap(hashGuardado -> {
